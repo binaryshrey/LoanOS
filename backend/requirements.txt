@@ -1,13 +1,25 @@
-annotated-doc==0.0.4
-annotated-types==0.7.0
-anyio==4.12.1
-click==8.3.1
-fastapi==0.128.0
-h11==0.16.0
-idna==3.11
-pydantic==2.12.5
-pydantic_core==2.41.5
-starlette==0.50.0
-typing-inspection==0.4.2
-typing_extensions==4.15.0
-uvicorn==0.40.0
+# Web framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# Database / ORM
+sqlalchemy>=2.0.29
+psycopg2-binary>=2.9.9
+
+# Google Cloud / Vertex AI
+google-cloud-aiplatform>=1.49.0
+google-cloud-storage>=2.14.0
+
+# Supabase client
+supabase>=2.4.0
+
+# HTTP / uploads
+httpx>=0.27.0
+python-multipart>=0.0.9
+
+# Environment variables
+python-dotenv>=1.0.1
+
+# Data validation
+pydantic>=2.6.0
+email-validator>=2.1.0
