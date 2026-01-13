@@ -12,13 +12,27 @@ import {
 } from "lucide-react";
 import React, { useState } from "react";
 
-export default function HeroSection() {
+interface User {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string;
+  profilePictureUrl?: string | null;
+}
+
+interface HeroSectionProps {
+  user: User | null;
+  signInUrl: string;
+  signUpUrl: string;
+}
+
+export default function HeroSection({
+  user,
+  signInUrl,
+  signUpUrl,
+}: HeroSectionProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [userName, setUserName] = useState("");
-  const [isInputFocus, setIsInputFocus] = useState(false);
-  const [showUserNameCheck, setShowUserNameCheck] = useState(false);
-  const [userNameAvailable, setUserNameAvailable] = useState(false);
-  const [userNameCheckLoading, setUserNameCheckLoading] = useState(false);
+  const [loadingButton, setLoadingButton] = useState(false);
 
   const handleScroll = () => {
     const element = document.getElementById("features-section");
@@ -27,22 +41,13 @@ export default function HeroSection() {
     }
   };
 
-  // Simulate username check
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      if (userName) {
-        setUserNameCheckLoading(true);
-        setTimeout(() => {
-          setUserNameAvailable(userName.length > 3);
-          setShowUserNameCheck(true);
-          setUserNameCheckLoading(false);
-        }, 500);
-      } else {
-        setShowUserNameCheck(false);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [userName]);
+  const handleGetStarted = () => {
+    setLoadingButton(true);
+    setTimeout(() => {
+      setLoadingButton(false);
+      window.location.href = user ? "/dashboard" : signInUrl;
+    }, 800);
+  };
 
   return (
     <div className="isolate bg-white min-h-screen">
@@ -68,7 +73,7 @@ export default function HeroSection() {
           <div className="flex lg:hidden gap-4">
             <div className="px-3 py-1 bg-neutral-400 rounded-full cursor-pointer">
               <Link
-                href="/signup"
+                href={signInUrl}
                 className="text-sm font-semibold leading-6 text-gray-900"
               >
                 Join LoanOS
@@ -117,12 +122,12 @@ export default function HeroSection() {
           <div className="hidden lg:flex lg:flex-1 lg:justify-end">
             <div className="flex gap-4 justify-center items-center">
               <Link
-                href="/login"
+                href={signInUrl}
                 className="text-sm font-semibold leading-6 text-gray-900"
               >
                 Log in
               </Link>
-              <Link href="/signup">
+              <Link href={signUpUrl}>
                 <div className="px-3 py-0.5 bg-neutral-400 rounded-full cursor-pointer">
                   <p className="text-sm font-semibold leading-6 text-gray-900">
                     Join LoanOS
@@ -184,13 +189,13 @@ export default function HeroSection() {
                   </div>
                   <div className="py-6">
                     <Link
-                      href="/login"
+                      href={signInUrl}
                       className="-mx-3 block rounded-lg py-2.5 px-3 text-base font-semibold leading-6 text-gray-900 hover:bg-gray-400/10"
                     >
                       Log in
                     </Link>
                     <Link
-                      href="/signup"
+                      href={signUpUrl}
                       className="-mx-3 block rounded-lg py-2.5 px-3 text-base font-semibold leading-6 text-gray-900 hover:bg-gray-400/10"
                     >
                       Join LoanOS
@@ -216,6 +221,32 @@ export default function HeroSection() {
               <p className="mt-6 text-sm sm:text-lg leading-8 text-gray-600">
                 Streamline your loan management at lightning fast speed!
               </p>
+            </div>
+
+            <div className="mt-10 flex items-center justify-center gap-x-6">
+              {loadingButton ? (
+                <button
+                  className="rounded-md bg-neutral-800 px-6 py-3 text-sm font-semibold text-white shadow-sm"
+                  disabled
+                >
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin inline" /> Get
+                  Started
+                </button>
+              ) : (
+                <button
+                  onClick={handleGetStarted}
+                  className="rounded-md bg-neutral-800 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-800 transition-colors cursor-pointer"
+                >
+                  Get Started
+                </button>
+              )}
+              <Link
+                href="#features"
+                onClick={handleScroll}
+                className="text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700 transition-colors flex items-center gap-1"
+              >
+                Learn more <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
 
             <div className="mt-20 flow-root sm:mt-16">
