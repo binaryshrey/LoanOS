@@ -50,6 +50,7 @@ export default function OnboardForm({ user }: OnboardFormProps) {
   const [step, setStep] = useState<"form" | "permissions">("form");
   const [duration, setDuration] = useState("180"); // Duration in seconds (3 minutes default)
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -361,6 +362,11 @@ export default function OnboardForm({ user }: OnboardFormProps) {
       const result = await response.json();
       console.log("✅ Loan session saved successfully:", result.data);
 
+      // Store the session ID for later use
+      if (result.data && result.data.id) {
+        setSessionId(result.data.id);
+      }
+
       // Move to permissions step instead of navigating directly
       setStep("permissions");
 
@@ -393,9 +399,15 @@ export default function OnboardForm({ user }: OnboardFormProps) {
   const handleStartSession = () => {
     setIsLoading(true);
 
-    // Keep streams alive and redirect to dashboard
+    // Keep streams alive and redirect to the loan session page
     setTimeout(() => {
-      router.push("/dashboard");
+      if (sessionId) {
+        router.push(
+          `/loanos-session/${sessionId}?autoStart=true&duration=${duration}`
+        );
+      } else {
+        router.push("/dashboard");
+      }
     }, 1000);
   };
 
