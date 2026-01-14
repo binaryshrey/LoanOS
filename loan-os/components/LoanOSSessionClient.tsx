@@ -659,15 +659,11 @@ export default function LoanOSSessionClient({
         <button
           onClick={handleToggle}
           disabled={isLoading || isInitializing}
-          className="px-8 py-4 rounded-full font-semibold text-white transition-all duration-300 flex items-center gap-3 shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            background: isConnected
-              ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
-              : "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-            boxShadow: isConnected
-              ? "0 8px 32px rgba(239, 68, 68, 0.4)"
-              : "0 8px 32px rgba(59, 130, 246, 0.4)",
-          }}
+          className={`px-8 py-2 rounded-full font-semibold transition-all hover:cursor-pointer duration-300 flex items-center gap-3 shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed ${
+            isConnected
+              ? "bg-red-600 text-white hover:bg-red-700"
+              : "bg-white text-black hover:bg-gray-100"
+          }`}
         >
           {isLoading ? (
             <>
