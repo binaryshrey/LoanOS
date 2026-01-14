@@ -11,6 +11,8 @@ import {
   Trash2,
   AlertCircle,
   Info,
+  Camera,
+  Mic,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,6 +47,7 @@ interface OnboardFormProps {
 export default function OnboardForm({ user }: OnboardFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [step, setStep] = useState<"form" | "permissions">("form");
   const [duration, setDuration] = useState("180"); // Duration in seconds (3 minutes default)
   const [error, setError] = useState<string | null>(null);
 
@@ -76,6 +79,54 @@ export default function OnboardForm({ user }: OnboardFormProps) {
     total: 0,
     uploadedFiles: [],
   });
+
+  // Permission states
+  const [micPermission, setMicPermission] = useState<
+    "pending" | "granted" | "denied"
+  >("pending");
+  const [cameraPermission, setCameraPermission] = useState<
+    "pending" | "granted" | "denied"
+  >("pending");
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+
+  const videoPreviewRef = useRef<HTMLVideoElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanupStreams();
+    };
+  }, []);
+
+  // Connect camera stream to video element when it becomes available
+  useEffect(() => {
+    if (cameraStream && videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = cameraStream;
+      videoPreviewRef.current.play().catch((err) => {
+        console.error("Error playing video:", err);
+      });
+    }
+  }, [cameraStream]);
+
+  const cleanupStreams = () => {
+    if (micStream) {
+      micStream.getTracks().forEach((track) => track.stop());
+    }
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+  };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -111,33 +162,17 @@ export default function OnboardForm({ user }: OnboardFormProps) {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async () => {
-    setIsLoading(true);
-    setError(null);
+  const uploadFiles = async () => {
+    if (selectedFiles.length === 0) return [];
+
+    setUploadProgress({
+      uploading: true,
+      completed: 0,
+      total: selectedFiles.length,
+      uploadedFiles: [],
+    });
 
     try {
-      // Validate required fields
-      if (!formData.loanName.trim()) {
-        throw new Error("Loan / Deal Name is required");
-      }
-
-      if (!formData.userRole) {
-        throw new Error("User Role is required");
-      }
-
-      if (selectedFiles.length === 0) {
-        throw new Error("Please upload at least one loan document");
-      }
-
-      // Upload files to GCS
-      setUploadProgress({
-        uploading: true,
-        completed: 0,
-        total: selectedFiles.length,
-        uploadedFiles: [],
-      });
-
-      console.log("Uploading files to GCS...");
       const results = await uploadMultipleFilesToGCS(
         selectedFiles,
         "loan_documents",
@@ -167,6 +202,101 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         })),
       }));
 
+      // Clear selected files after successful upload
+      setSelectedFiles([]);
+
+      return successfulUploads;
+    } catch (error) {
+      console.error("Upload error:", error);
+      setUploadProgress((prev) => ({
+        ...prev,
+        uploading: false,
+      }));
+      throw error;
+    }
+  };
+
+  const requestMicrophonePermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicStream(stream);
+      setMicPermission("granted");
+
+      // Setup audio level monitoring
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+      analyser.fftSize = 256;
+
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const updateAudioLevel = () => {
+        if (analyserRef.current) {
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          setAudioLevel(average);
+          animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+        }
+      };
+
+      updateAudioLevel();
+    } catch (err) {
+      console.error("Microphone permission denied:", err);
+      setMicPermission("denied");
+    }
+  };
+
+  const requestCameraPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setCameraStream(stream);
+      setCameraPermission("granted");
+
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+        // Explicitly play the video to ensure it starts
+        try {
+          await videoPreviewRef.current.play();
+        } catch (playError) {
+          console.error("Error playing video:", playError);
+        }
+      }
+    } catch (err) {
+      console.error("Camera permission denied:", err);
+      setCameraPermission("denied");
+    }
+  };
+
+  const handleSubmit = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Validate required fields
+      if (!formData.loanName.trim()) {
+        throw new Error("Loan / Deal Name is required");
+      }
+
+      if (!formData.userRole) {
+        throw new Error("User Role is required");
+      }
+
+      if (selectedFiles.length === 0) {
+        throw new Error("Please upload at least one loan document");
+      }
+
+      // Upload files to GCS
+      console.log("Uploading files to GCS...");
+      const successfulUploads = await uploadFiles();
+
+      if (!successfulUploads || successfulUploads.length === 0) {
+        throw new Error("File upload failed. Please try again.");
+      }
+
       console.log("✅ Files uploaded successfully:", successfulUploads);
 
       // Prepare all file metadata as arrays
@@ -176,7 +306,7 @@ export default function OnboardForm({ user }: OnboardFormProps) {
       );
       const allFileUrls = successfulUploads.map((f: any) => f.public_url);
 
-      // TODO: Save loan session data to backend
+      // Save loan session data to backend
       const loanSessionData = {
         user_id: user.id,
         user_email: user.email,
@@ -231,10 +361,14 @@ export default function OnboardForm({ user }: OnboardFormProps) {
       const result = await response.json();
       console.log("✅ Loan session saved successfully:", result.data);
 
-      // Navigate to dashboard after successful save
+      // Move to permissions step instead of navigating directly
+      setStep("permissions");
+
+      // Auto-request permissions when step changes
       setTimeout(() => {
-        router.push("/dashboard");
-      }, 1000);
+        requestMicrophonePermission();
+        requestCameraPermission();
+      }, 500);
     } catch (error) {
       console.error("Error during setup:", error);
       const errorMessage =
@@ -256,6 +390,207 @@ export default function OnboardForm({ user }: OnboardFormProps) {
     }
   };
 
+  const handleStartSession = () => {
+    setIsLoading(true);
+
+    // Keep streams alive and redirect to dashboard
+    setTimeout(() => {
+      router.push("/dashboard");
+    }, 1000);
+  };
+
+  const allPermissionsGranted =
+    micPermission === "granted" && cameraPermission === "granted";
+
+  // Permissions Step UI
+  if (step === "permissions") {
+    return (
+      <div className="mt-8 space-y-6">
+        {/* Permission Setup Card */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6 sm:p-8 shadow-sm">
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">
+              Setup Your Devices
+            </h2>
+            <p className="text-sm text-gray-600 mt-2">
+              We need access to your microphone and camera for AI conversations
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            {/* Microphone Check */}
+            <div className="border border-gray-200 rounded-lg p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      micPermission === "granted"
+                        ? "bg-green-100"
+                        : micPermission === "denied"
+                        ? "bg-red-100"
+                        : "bg-gray-100"
+                    }`}
+                  >
+                    <Mic
+                      className={`w-6 h-6 ${
+                        micPermission === "granted"
+                          ? "text-green-600"
+                          : micPermission === "denied"
+                          ? "text-red-600"
+                          : "text-gray-600"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Microphone</h3>
+                    <p className="text-sm text-gray-600">
+                      {micPermission === "granted" && "Working perfectly!"}
+                      {micPermission === "denied" && "Permission denied"}
+                      {micPermission === "pending" && "Requesting access..."}
+                    </p>
+                  </div>
+                </div>
+                {micPermission === "granted" && (
+                  <Check className="w-6 h-6 text-green-600" />
+                )}
+                {micPermission === "denied" && (
+                  <X className="w-6 h-6 text-red-600" />
+                )}
+              </div>
+
+              {micPermission === "granted" && (
+                <div className="mt-4">
+                  <p className="text-xs text-gray-500 mb-2">Audio Level</p>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-green-500 transition-all duration-100"
+                      style={{
+                        width: `${Math.min((audioLevel / 128) * 100, 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Speak to test your microphone
+                  </p>
+                </div>
+              )}
+
+              {micPermission === "denied" && (
+                <Button
+                  onClick={requestMicrophonePermission}
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 py-3 sm:py-2"
+                >
+                  Try Again
+                </Button>
+              )}
+            </div>
+
+            {/* Camera Check */}
+            <div className="border border-gray-200 rounded-lg p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      cameraPermission === "granted"
+                        ? "bg-green-100"
+                        : cameraPermission === "denied"
+                        ? "bg-red-100"
+                        : "bg-gray-100"
+                    }`}
+                  >
+                    <Camera
+                      className={`w-6 h-6 ${
+                        cameraPermission === "granted"
+                          ? "text-green-600"
+                          : cameraPermission === "denied"
+                          ? "text-red-600"
+                          : "text-gray-600"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Camera</h3>
+                    <p className="text-sm text-gray-600">
+                      {cameraPermission === "granted" && "Working perfectly!"}
+                      {cameraPermission === "denied" && "Permission denied"}
+                      {cameraPermission === "pending" && "Requesting access..."}
+                    </p>
+                  </div>
+                </div>
+                {cameraPermission === "granted" && (
+                  <Check className="w-6 h-6 text-green-600" />
+                )}
+                {cameraPermission === "denied" && (
+                  <X className="w-6 h-6 text-red-600" />
+                )}
+              </div>
+
+              {cameraPermission === "granted" && (
+                <div className="mt-4">
+                  <video
+                    ref={videoPreviewRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full aspect-video bg-gray-900 rounded-lg max-h-144 object-cover"
+                    style={{ transform: "scaleX(-1)" }}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Camera preview</p>
+                </div>
+              )}
+
+              {cameraPermission === "denied" && (
+                <Button
+                  onClick={requestCameraPermission}
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 py-3 sm:py-2"
+                >
+                  Try Again
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-8 flex flex-col sm:flex-row gap-4">
+            <Button
+              onClick={() => {
+                cleanupStreams();
+                setStep("form");
+                setMicPermission("pending");
+                setCameraPermission("pending");
+              }}
+              variant="outline"
+              size="lg"
+              className="flex-1 cursor-pointer py-2 sm:py-3"
+            >
+              Back to Form
+            </Button>
+            <Button
+              onClick={handleStartSession}
+              disabled={!allPermissionsGranted || isLoading}
+              size="lg"
+              className="flex-1 bg-black hover:bg-gray-800 text-white font-semibold cursor-pointer py-2 sm:py-3"
+            >
+              {isLoading && <Loader2 className="h-5 w-5 animate-spin mr-2" />}
+              {isLoading ? "Starting..." : "Start LoanOS Intelligence Session"}
+            </Button>
+          </div>
+
+          {!allPermissionsGranted && (
+            <p className="text-center text-sm text-gray-500 mt-4">
+              Please grant both microphone and camera permissions to continue
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Form Step UI
   return (
     <div className="mt-8 space-y-3">
       {/* Error Alert */}
@@ -654,7 +989,7 @@ export default function OnboardForm({ user }: OnboardFormProps) {
             Processing...
           </>
         ) : (
-          "Start LoanOS Intelligence Session"
+          "Continue to Device Setup"
         )}
       </Button>
     </div>
