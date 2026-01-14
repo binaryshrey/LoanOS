@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { User, Home, LogOut } from "lucide-react";
+import {
+  RiHome6Line,
+  RiUserSmileLine,
+  RiLogoutCircleRLine,
+} from "@remixicon/react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -52,7 +56,7 @@ export default function ProfileMenu({ user }: ProfileMenuProps) {
         <Link href="/profile" className="flex items-center w-full">
           <DropdownMenuItem className="w-full cursor-pointer">
             <div className="flex gap-2 items-center">
-              <User className="h-4 w-4" />
+              <RiUserSmileLine className="h-4 w-4" />
               <span>Profile</span>
             </div>
           </DropdownMenuItem>
@@ -61,7 +65,7 @@ export default function ProfileMenu({ user }: ProfileMenuProps) {
         <Link href="/dashboard" className="flex items-center w-full">
           <DropdownMenuItem className="w-full cursor-pointer">
             <div className="flex gap-2 items-center">
-              <Home className="h-4 w-4" />
+              <RiHome6Line className="h-4 w-4" />
               <span>Dashboard</span>
             </div>
           </DropdownMenuItem>
@@ -72,7 +76,7 @@ export default function ProfileMenu({ user }: ProfileMenuProps) {
         <form action={handleSignOut}>
           <DropdownMenuItem asChild className="w-full cursor-pointer">
             <button type="submit" className="flex gap-2 items-center w-full">
-              <LogOut className="h-4 w-4" />
+              <RiLogoutCircleRLine className="h-4 w-4" />
               <span>Sign out</span>
             </button>
           </DropdownMenuItem>
