@@ -364,10 +364,23 @@ export default function LoanOSSessionClient({
           agentAudioInputStreamRef.current?.sendAudioChunk(audio);
         },
         onUserTranscript: (text: string) => addMessage("user", text),
-        onAgentTranscript: (text: string) => addMessage("agent", text),
-        onError: (err: string) => {
+        onAgentResponse: (text: string) => {
+          agentAudioInputStreamRef.current?.endSequence();
+          addMessage("agent", text);
+        },
+        onInterrupt: () => {
+          addMessage("system", "Interrupted");
+          anamClientRef.current?.interruptPersona();
+          agentAudioInputStreamRef.current?.endSequence();
+        },
+        onDisconnect: () => {
+          if (isIntentionalDisconnectRef.current) {
+            setIsConnected(false);
+          }
+        },
+        onError: () => {
           if (!isIntentionalDisconnectRef.current) {
-            showError(err);
+            showError("Connection error");
           }
         },
       });
