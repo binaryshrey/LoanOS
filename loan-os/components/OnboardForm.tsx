@@ -29,6 +29,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { uploadMultipleFilesToGCS } from "@/lib/gcsUpload";
 
 interface User {
   id: string;
@@ -64,9 +65,10 @@ export default function OnboardForm({ user }: OnboardFormProps) {
     completed: number;
     total: number;
     uploadedFiles: Array<{
+      gcs_bucket: string;
+      gcs_object_path: string;
+      public_url: string;
       filename: string;
-      size: number;
-      url: string;
     }>;
   }>({
     uploading: false,
@@ -127,8 +129,7 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         throw new Error("Please upload at least one loan document");
       }
 
-      // TODO: Implement file upload logic here
-      // For now, simulate upload
+      // Upload files to GCS
       setUploadProgress({
         uploading: true,
         completed: 0,
@@ -136,32 +137,44 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         uploadedFiles: [],
       });
 
-      // Simulate file upload
-      const uploadedFiles = selectedFiles.map((file, index) => {
-        setTimeout(() => {
+      console.log("Uploading files to GCS...");
+      const results = await uploadMultipleFilesToGCS(
+        selectedFiles,
+        "loan_documents",
+        (completed, total) => {
           setUploadProgress((prev) => ({
             ...prev,
-            completed: index + 1,
+            completed,
+            total,
           }));
-        }, index * 500);
-
-        return {
-          filename: file.name,
-          size: file.size,
-          url: `#`, // Replace with actual URL after upload
-        };
-      });
-
-      // Wait for all uploads to complete
-      await new Promise((resolve) =>
-        setTimeout(resolve, selectedFiles.length * 500 + 500)
+        }
       );
+
+      const successfulUploads = results.filter((r: any) => r.success);
+
+      if (successfulUploads.length === 0) {
+        throw new Error("File upload failed. Please try again.");
+      }
 
       setUploadProgress((prev) => ({
         ...prev,
         uploading: false,
-        uploadedFiles,
+        uploadedFiles: successfulUploads.map((r: any) => ({
+          gcs_bucket: r.gcs_bucket,
+          gcs_object_path: r.gcs_object_path,
+          public_url: r.public_url,
+          filename: r.filename,
+        })),
       }));
+
+      console.log("✅ Files uploaded successfully:", successfulUploads);
+
+      // Prepare all file metadata as arrays
+      const allBuckets = successfulUploads.map((f: any) => f.gcs_bucket);
+      const allObjectPaths = successfulUploads.map(
+        (f: any) => f.gcs_object_path
+      );
+      const allFileUrls = successfulUploads.map((f: any) => f.public_url);
 
       // TODO: Save loan session data to backend
       const loanSessionData = {
@@ -174,12 +187,28 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         duration_seconds: parseInt(duration),
         language: formData.language,
         region: formData.region,
-        documents: uploadedFiles,
+        // Store as arrays to support multiple files
+        gcp_buckets: allBuckets,
+        gcp_object_paths: allObjectPaths,
+        gcp_file_urls: allFileUrls,
+        // Legacy fields for backward compatibility (first file)
+        gcp_bucket: allBuckets[0] || "",
+        gcp_object_path: allObjectPaths[0] || "",
+        gcp_file_url: allFileUrls[0] || "",
+        // Full document details
+        documents: successfulUploads.map((f: any) => ({
+          filename: f.filename,
+          gcs_bucket: f.gcs_bucket,
+          gcs_object_path: f.gcs_object_path,
+          public_url: f.public_url,
+          size: f.size,
+          contentType: f.contentType,
+        })),
       };
 
       console.log("Loan session data:", loanSessionData);
 
-      // Navigate to dashboard or loan interaction page
+      // Navigate to dashboard after successful upload
       setTimeout(() => {
         router.push("/dashboard");
       }, 1000);
@@ -188,6 +217,14 @@ export default function OnboardForm({ user }: OnboardFormProps) {
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       setError(errorMessage);
+
+      // Reset upload progress on error
+      setUploadProgress({
+        uploading: false,
+        completed: 0,
+        total: 0,
+        uploadedFiles: [],
+      });
 
       // Scroll to top to show error
       window.scrollTo({ top: 0, behavior: "smooth" });
