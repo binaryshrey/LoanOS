@@ -204,11 +204,34 @@ export default function OnboardForm({ user }: OnboardFormProps) {
           size: f.size,
           contentType: f.contentType,
         })),
+        // Initialize empty conversations array
+        conversations: [],
       };
 
       console.log("Loan session data:", loanSessionData);
 
-      // Navigate to dashboard after successful upload
+      // Save loan session data to Supabase
+      console.log("Saving loan session to Supabase...");
+      const response = await fetch("/api/loan-sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(loanSessionData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.error ||
+            `Failed to save loan session: ${response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      console.log("✅ Loan session saved successfully:", result.data);
+
+      // Navigate to dashboard after successful save
       setTimeout(() => {
         router.push("/dashboard");
       }, 1000);
