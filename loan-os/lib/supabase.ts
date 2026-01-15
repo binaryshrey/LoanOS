@@ -61,6 +61,7 @@ export interface LoanSession {
     message?: string;
     metadata?: any;
   }>;
+  analysis?: any; // AI-generated analysis of the loan (JSON)
   status?: string;
   created_at?: string;
   updated_at?: string;

@@ -10,7 +10,7 @@ export default async function Onboard() {
   return (
     <div
       className="relative z-10 min-h-screen"
-      style={{ backgroundColor: "#d8dbdf" }}
+      style={{ backgroundColor: "#e8eaf0" }}
     >
       <div className="px-6 pt-6 lg:px-8">
         <nav className="flex items-center justify-between">

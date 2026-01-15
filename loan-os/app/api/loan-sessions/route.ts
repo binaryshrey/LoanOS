@@ -47,6 +47,7 @@ export async function POST(req: Request) {
       gcp_file_url: data.gcp_file_url || "",
       documents: data.documents || [],
       conversations: data.conversations || [],
+      analysis: data.analysis || {},
       status: data.status || "Pending",
     };
 

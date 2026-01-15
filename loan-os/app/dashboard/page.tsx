@@ -1,8 +1,25 @@
 // app/dashboard/page.tsx
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
-import ProfileMenu from "@/components/ProfileMenu";
-import LoanSessionsList from "@/components/LoanSessionsList";
+import DashboardLayout from "@/components/DashboardLayout";
+import DashboardClient from "@/components/DashboardClient";
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function getFormattedDate() {
+  const now = new Date();
+  return now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 export default async function DashboardPage() {
   const { user } = await withAuth();
@@ -11,36 +28,18 @@ export default async function DashboardPage() {
     redirect("/sign-in");
   }
 
+  const greeting = getGreeting();
+  const formattedDate = getFormattedDate();
+  const userName = user.firstName || user.email?.split("@")[0] || "User";
+
   return (
-    <div
-      className="relative z-10 min-h-screen"
-      style={{ backgroundColor: "#d8dbdf" }}
-    >
-      <div className="px-6 pt-6 lg:px-8">
-        <nav className="flex items-center justify-between">
-          <a href="/dashboard" className="-m-1.5 p-1.5">
-            <img className="h-8" src="/logo.svg" alt="LoanOS" />
-          </a>
-          <div className="lg:flex lg:flex-1 lg:justify-end">
-            <ProfileMenu user={user} />
-          </div>
-        </nav>
-      </div>
-
-      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Welcome back, {user.firstName || user.email.split("@")[0]}!
-          </h1>
-          <p className="mt-2 text-gray-600">
-            Manage your loan intelligence sessions and documentation.
-          </p>
-        </div>
-
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <LoanSessionsList userId={user.id} />
-        </div>
-      </div>
-    </div>
+    <DashboardLayout user={user} currentPage="dashboard">
+      <DashboardClient
+        greeting={greeting}
+        formattedDate={formattedDate}
+        userName={userName}
+        userId={user.id ?? user.email}
+      />
+    </DashboardLayout>
   );
 }

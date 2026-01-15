@@ -42,7 +42,7 @@ export default function LoanSessionsList({ userId }: LoanSessionsListProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-800"></div>
         <span className="ml-3 text-gray-600">Loading loan sessions...</span>
       </div>
     );
@@ -69,7 +69,7 @@ export default function LoanSessionsList({ userId }: LoanSessionsListProps) {
         <div className="mt-6">
           <a
             href="/onboard"
-            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-neutral-800 hover:bg-neutral-700"
           >
             Create Loan Session
           </a>
@@ -86,7 +86,7 @@ export default function LoanSessionsList({ userId }: LoanSessionsListProps) {
         </h2>
         <a
           href="/onboard"
-          className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+          className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-neutral-800 hover:bg-neutral-700"
         >
           New Session
         </a>
