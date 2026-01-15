@@ -11,6 +11,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@anam-ai/js-sdk";
 import type AnamClient from "@anam-ai/js-sdk/dist/module/AnamClient";
 import { connectElevenLabs, stopElevenLabs } from "@/lib/elevenlabs";
+import {
+  initializeBackendContext,
+  buildInitialContextMessage,
+} from "@/lib/loanosBackend";
 import ProfileMenu from "./ProfileMenu";
 
 interface Config {
@@ -48,6 +52,7 @@ export default function LoanOSSessionClient({
   const [timeRemaining, setTimeRemaining] = useState(duration * 60); // Convert to seconds
   const [isEnding, setIsEnding] = useState(false);
   const [endingMessage, setEndingMessage] = useState("");
+  const [loanSessionData, setLoanSessionData] = useState<any>(null);
   const isIntentionalDisconnectRef = useRef(false);
 
   const anamClientRef = useRef<AnamClient | null>(null);
@@ -96,6 +101,25 @@ export default function LoanOSSessionClient({
           await releaseQueueSession();
           await new Promise((resolve) => setTimeout(resolve, 500)); // Wait for release
         }
+
+        // Fetch loan session data from Supabase
+        console.log("[Session] Fetching loan session data...");
+        const sessionResponse = await fetch(
+          `/api/loan-sessions?id=${sessionId}`
+        );
+        if (!sessionResponse.ok) {
+          throw new Error("Failed to fetch loan session data");
+        }
+        const sessionResult = await sessionResponse.json();
+        if (!sessionResult.success || !sessionResult.data) {
+          throw new Error("Loan session not found");
+        }
+        const loanData = sessionResult.data;
+        setLoanSessionData(loanData);
+        console.log("[Session] ✅ Loan session data loaded:", {
+          loan_name: loanData.loan_name,
+          document_count: loanData.documents?.length || 0,
+        });
 
         // Fetch fresh config
         console.log("[Session] Fetching config from /api/loanos...");
@@ -353,37 +377,75 @@ export default function LoanOSSessionClient({
         throw new Error("Session not initialized. Please refresh the page.");
       }
 
+      if (!loanSessionData) {
+        throw new Error(
+          "Loan session data not loaded. Please refresh the page."
+        );
+      }
+
+      // Initialize backend context first (if not already done in onboarding)
+      console.log("[Backend] Checking context initialization status...");
+      try {
+        // Always try to initialize - backend will skip if already loaded
+        await initializeBackendContext(sessionId, user.id);
+        console.log("[Backend] ✅ Context ready");
+      } catch (backendError) {
+        console.warn(
+          "[Backend] ⚠️ Context initialization issue:",
+          backendError
+        );
+        // Don't throw - allow session to continue even if backend fails
+        addMessage(
+          "system",
+          "Note: Advanced document analysis may be limited."
+        );
+      }
+
+      // Build initial context message for ElevenLabs
+      const contextMessage = buildInitialContextMessage(
+        sessionId,
+        loanSessionData.loan_name,
+        loanSessionData.user_role,
+        loanSessionData.institution,
+        loanSessionData.documents
+      );
+      console.log("[ElevenLabs] Initial context:", contextMessage);
+
       console.log("[ElevenLabs] Connecting with pre-initialized avatar...");
 
-      await connectElevenLabs(configRef.current.elevenLabsAgentId, {
-        onReady: () => {
-          setIsConnected(true);
-          addMessage("system", "Connected. Let's discuss your loan details.");
+      await connectElevenLabs(
+        configRef.current.elevenLabsAgentId,
+        {
+          onReady: () => {
+            setIsConnected(true);
+            addMessage("system", "Connected. Let's discuss your loan details.");
+          },
+          onAudio: (audio: string) => {
+            agentAudioInputStreamRef.current?.sendAudioChunk(audio);
+          },
+          onUserTranscript: (text: string) => addMessage("user", text),
+          onAgentResponse: (text: string) => {
+            agentAudioInputStreamRef.current?.endSequence();
+            addMessage("agent", text);
+          },
+          onInterrupt: () => {
+            addMessage("system", "Interrupted");
+            anamClientRef.current?.interruptPersona();
+            agentAudioInputStreamRef.current?.endSequence();
+          },
+          onDisconnect: () => {
+            if (isIntentionalDisconnectRef.current) {
+              setIsConnected(false);
+            }
+          },
+          onError: () => {
+            if (!isIntentionalDisconnectRef.current) {
+              showError("Connection error");
+            }
+          },
         },
-        onAudio: (audio: string) => {
-          agentAudioInputStreamRef.current?.sendAudioChunk(audio);
-        },
-        onUserTranscript: (text: string) => addMessage("user", text),
-        onAgentResponse: (text: string) => {
-          agentAudioInputStreamRef.current?.endSequence();
-          addMessage("agent", text);
-        },
-        onInterrupt: () => {
-          addMessage("system", "Interrupted");
-          anamClientRef.current?.interruptPersona();
-          agentAudioInputStreamRef.current?.endSequence();
-        },
-        onDisconnect: () => {
-          if (isIntentionalDisconnectRef.current) {
-            setIsConnected(false);
-          }
-        },
-        onError: () => {
-          if (!isIntentionalDisconnectRef.current) {
-            showError("Connection error");
-          }
-        },
-      });
+        contextMessage // Pass context as initial message
+      );
 
       setIsLoading(false);
     } catch (err) {

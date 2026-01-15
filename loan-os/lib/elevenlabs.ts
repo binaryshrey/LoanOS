@@ -160,6 +160,14 @@ export async function connectElevenLabs(
         callbacks.onInterrupt?.();
         break;
 
+      case "agent_tool_invocation":
+        console.log("[11Labs] 🔧 Tool invocation detected:", msg);
+        break;
+
+      case "agent_tool_result":
+        console.log("[11Labs] 🔧 Tool result received:", msg);
+        break;
+
       case "ping":
         websocket?.send(
           JSON.stringify({ type: "pong", event_id: msg.ping_event?.event_id })

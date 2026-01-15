@@ -32,6 +32,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { uploadMultipleFilesToGCS } from "@/lib/gcsUpload";
+import { initializeBackendContext } from "@/lib/loanosBackend";
 
 interface User {
   id: string;
@@ -365,6 +366,55 @@ export default function OnboardForm({ user }: OnboardFormProps) {
       // Store the session ID for later use
       if (result.data && result.data.id) {
         setSessionId(result.data.id);
+
+        // 🚀 Initialize backend context and process documents with Gemini
+        console.log(
+          "🔄 Processing documents with AI (this may take 10-30 seconds)..."
+        );
+        setError("📄 Processing documents with AI, please wait...");
+
+        try {
+          const contextResponse = await initializeBackendContext(
+            result.data.id,
+            user.id
+          );
+          console.log("✅ Backend context response:", contextResponse);
+
+          // Check if documents were processed
+          if (contextResponse.context_summary?.document_summaries) {
+            const processed =
+              contextResponse.context_summary.documents_processed || 0;
+            const total = contextResponse.context_summary.document_count || 0;
+
+            console.log(`✅ Documents processed: ${processed}/${total}`);
+            console.log(
+              "📄 Document summaries:",
+              contextResponse.context_summary.document_summaries
+            );
+
+            if (processed > 0) {
+              setError(`✅ ${processed} document(s) processed and ready!`);
+            } else {
+              setError("⚠️ Documents uploaded but AI processing incomplete");
+            }
+          } else {
+            console.log("✅ Context initialized successfully!");
+            setError("✅ Context initialized!");
+          }
+
+          // Clear success message after 2 seconds
+          setTimeout(() => setError(null), 2000);
+        } catch (contextError) {
+          console.warn(
+            "⚠️ Backend context initialization failed:",
+            contextError
+          );
+          setError(
+            "⚠️ Document processing incomplete (will retry on session start)"
+          );
+          // Don't throw - context can be initialized later if this fails
+          setTimeout(() => setError(null), 3000);
+        }
       }
 
       // Move to permissions step instead of navigating directly

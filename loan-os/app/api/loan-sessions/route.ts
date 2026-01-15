@@ -90,20 +90,54 @@ export async function POST(req: Request) {
 /**
  * GET /api/loan-sessions?user_id=xxx
  * Get all loan sessions for a user
+ *
+ * GET /api/loan-sessions?id=xxx
+ * Get a specific loan session by ID
  */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("user_id");
+    const sessionId = searchParams.get("id");
 
+    const supabase = getSupabaseServerClient();
+
+    // Fetch single session by ID
+    if (sessionId) {
+      const { data, error } = await supabase
+        .from("loan_sessions")
+        .select("*")
+        .eq("id", sessionId)
+        .single();
+
+      if (error) {
+        console.error("Supabase query error:", error);
+        return NextResponse.json(
+          { error: error.message || "Failed to fetch loan session" },
+          { status: 500 }
+        );
+      }
+
+      if (!data) {
+        return NextResponse.json(
+          { error: "Loan session not found" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: data,
+      });
+    }
+
+    // Fetch all sessions for a user
     if (!userId) {
       return NextResponse.json(
-        { error: "user_id query parameter is required" },
+        { error: "user_id or id query parameter is required" },
         { status: 400 }
       );
     }
-
-    const supabase = getSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("loan_sessions")
