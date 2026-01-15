@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/tooltip";
 import { uploadMultipleFilesToGCS } from "@/lib/gcsUpload";
 import { initializeBackendContext } from "@/lib/loanosBackend";
+import { toast } from "sonner";
 
 interface User {
   id: string;
@@ -278,7 +279,7 @@ export default function OnboardForm({ user }: OnboardFormProps) {
     setError(null);
 
     try {
-      // Validate required fields
+      // 1️⃣ VALIDATION PHASE (No toasts during validation)
       if (!formData.loanName.trim()) {
         throw new Error("Loan / Deal Name is required");
       }
@@ -291,25 +292,55 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         throw new Error("Please upload at least one loan document");
       }
 
-      // Upload files to GCS
+      // 2️⃣ UI TRANSITION TO PERMISSIONS (No toasts during transition)
+      setStep("permissions");
+
+      // Auto-request permissions after transition
+      setTimeout(() => {
+        requestMicrophonePermission();
+        requestCameraPermission();
+      }, 300);
+    } catch (error) {
+      console.error("Error during validation:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      setError(errorMessage);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStartSession = async () => {
+    setIsLoading(true);
+
+    try {
+      // 3️⃣ FILE UPLOAD PHASE
+      toast.loading("Uploading documents to cloud storage.", {
+        id: "upload",
+      });
       console.log("Uploading files to GCS...");
+
       const successfulUploads = await uploadFiles();
 
       if (!successfulUploads || successfulUploads.length === 0) {
         throw new Error("File upload failed. Please try again.");
       }
 
-      console.log("✅ Files uploaded successfully:", successfulUploads);
+      toast.success(`${successfulUploads.length} document(s) uploaded!`, {
+        id: "upload",
+      });
+      console.log("Files uploaded successfully:", successfulUploads);
 
-      // Prepare all file metadata as arrays
+      // Prepare file metadata
       const allBuckets = successfulUploads.map((f: any) => f.gcs_bucket);
       const allObjectPaths = successfulUploads.map(
         (f: any) => f.gcs_object_path
       );
       const allFileUrls = successfulUploads.map((f: any) => f.public_url);
 
-      // Save loan session data to backend
-      const loanSessionData = {
+      // Prepare base session data
+      const baseSessionData = {
         user_id: user.id,
         user_email: user.email,
         loan_name: formData.loanName,
@@ -319,15 +350,12 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         duration_seconds: parseInt(duration),
         language: formData.language,
         region: formData.region,
-        // Store as arrays to support multiple files
         gcp_buckets: allBuckets,
         gcp_object_paths: allObjectPaths,
         gcp_file_urls: allFileUrls,
-        // Legacy fields for backward compatibility (first file)
         gcp_bucket: allBuckets[0] || "",
         gcp_object_path: allObjectPaths[0] || "",
         gcp_file_url: allFileUrls[0] || "",
-        // Full document details
         documents: successfulUploads.map((f: any) => ({
           filename: f.filename,
           gcs_bucket: f.gcs_bucket,
@@ -336,15 +364,75 @@ export default function OnboardForm({ user }: OnboardFormProps) {
           size: f.size,
           contentType: f.contentType,
         })),
-        // Initialize empty conversations array
         conversations: [],
       };
 
-      console.log("Loan session data:", loanSessionData);
+      // 4️⃣ AI DOCUMENT PROCESSING PHASE (using Backend API)
+      toast.loading("Processing documents (this may take 5-10 seconds)!", {
+        id: "ai",
+      });
 
-      // Save loan session data to Supabase
-      console.log("Saving loan session to Supabase...");
-      const response = await fetch("/api/loan-sessions", {
+      // Call backend directly to process documents and generate analysis
+      const backendUrl =
+        process.env.NEXT_PUBLIC_LOANOS_BACKEND_URL || "http://localhost:8080";
+      const httpUrl = backendUrl
+        .replace("ws://", "http://")
+        .replace("wss://", "https://");
+
+      const aiResponse = await fetch(`${httpUrl}/api/process-documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          documents: successfulUploads.map((f: any) => ({
+            filename: f.filename,
+            gcs_bucket: f.gcs_bucket,
+            gcs_object_path: f.gcs_object_path,
+            public_url: f.public_url,
+            contentType: f.contentType,
+          })),
+          loan_context: {
+            loan_name: formData.loanName,
+            user_role: formData.userRole,
+            region: formData.region,
+            language: formData.language,
+          },
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        console.warn(
+          "Documents processing failed, continuing with empty analysis"
+        );
+        toast.warning("Documents processing failed, saving without analysis.", {
+          id: "ai",
+        });
+      }
+
+      const aiResult = await aiResponse.json();
+      const analysis = aiResult.analysis || {};
+      const documentSummaries = aiResult.document_summaries || [];
+      const documentsProcessed = aiResult.documents_processed || 0;
+
+      toast.success(`${documentsProcessed} document(s) analyzed!`, {
+        id: "ai",
+      });
+      console.log("Documents processing complete:", { documentsProcessed });
+
+      // 5️⃣ CREATE SESSION WITH ANALYSIS (Single Database Operation)
+      toast.loading("Creating loan session with analysis.", {
+        id: "save",
+      });
+
+      const loanSessionData = {
+        ...baseSessionData,
+        analysis: analysis,
+        status: "Pending",
+      };
+
+      const sessionResponse = await fetch("/api/loan-sessions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -352,113 +440,49 @@ export default function OnboardForm({ user }: OnboardFormProps) {
         body: JSON.stringify(loanSessionData),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+      if (!sessionResponse.ok) {
+        const errorData = await sessionResponse.json().catch(() => ({}));
         throw new Error(
           errorData.error ||
-            `Failed to save loan session: ${response.statusText}`
+            `Failed to save loan session: ${sessionResponse.statusText}`
         );
       }
 
-      const result = await response.json();
-      console.log("✅ Loan session saved successfully:", result.data);
+      const sessionResult = await sessionResponse.json();
+      const newSessionId = sessionResult.data.id;
+      setSessionId(newSessionId);
 
-      // Store the session ID for later use
-      if (result.data && result.data.id) {
-        setSessionId(result.data.id);
+      toast.success("Loan session created with analysis!", { id: "save" });
+      console.log("Loan session saved with analysis:", newSessionId);
 
-        // 🚀 Initialize backend context and process documents with Gemini
-        console.log(
-          "🔄 Processing documents with AI (this may take 10-30 seconds)..."
+      // Initialize backend context for real-time conversations
+      try {
+        await initializeBackendContext(newSessionId, user.id);
+        console.log("✅ Backend context initialized for conversations");
+      } catch (contextError) {
+        console.warn(
+          "Backend context initialization failed, will retry on session start"
         );
-        setError("📄 Processing documents with AI, please wait...");
-
-        try {
-          const contextResponse = await initializeBackendContext(
-            result.data.id,
-            user.id
-          );
-          console.log("✅ Backend context response:", contextResponse);
-
-          // Check if documents were processed
-          if (contextResponse.context_summary?.document_summaries) {
-            const processed =
-              contextResponse.context_summary.documents_processed || 0;
-            const total = contextResponse.context_summary.document_count || 0;
-
-            console.log(`✅ Documents processed: ${processed}/${total}`);
-            console.log(
-              "📄 Document summaries:",
-              contextResponse.context_summary.document_summaries
-            );
-
-            if (processed > 0) {
-              setError(`✅ ${processed} document(s) processed and ready!`);
-            } else {
-              setError("⚠️ Documents uploaded but AI processing incomplete");
-            }
-          } else {
-            console.log("✅ Context initialized successfully!");
-            setError("✅ Context initialized!");
-          }
-
-          // Clear success message after 2 seconds
-          setTimeout(() => setError(null), 2000);
-        } catch (contextError) {
-          console.warn(
-            "⚠️ Backend context initialization failed:",
-            contextError
-          );
-          setError(
-            "⚠️ Document processing incomplete (will retry on session start)"
-          );
-          // Don't throw - context can be initialized later if this fails
-          setTimeout(() => setError(null), 3000);
-        }
       }
 
-      // Move to permissions step instead of navigating directly
-      setStep("permissions");
+      // 6️⃣ NAVIGATE TO SESSION
+      toast.success("All set! Redirecting to your LoanOS session.", {
+        duration: 2000,
+      });
 
-      // Auto-request permissions when step changes
       setTimeout(() => {
-        requestMicrophonePermission();
-        requestCameraPermission();
-      }, 500);
+        router.push(
+          `/loanos-session/${newSessionId}?autoStart=true&duration=${duration}`
+        );
+      }, 1500);
     } catch (error) {
-      console.error("Error during setup:", error);
+      console.error("Error starting session:", error);
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       setError(errorMessage);
-
-      // Reset upload progress on error
-      setUploadProgress({
-        uploading: false,
-        completed: 0,
-        total: 0,
-        uploadedFiles: [],
-      });
-
-      // Scroll to top to show error
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } finally {
+      toast.error(`${errorMessage}`);
       setIsLoading(false);
     }
-  };
-
-  const handleStartSession = () => {
-    setIsLoading(true);
-
-    // Keep streams alive and redirect to the loan session page
-    setTimeout(() => {
-      if (sessionId) {
-        router.push(
-          `/loanos-session/${sessionId}?autoStart=true&duration=${duration}`
-        );
-      } else {
-        router.push("/dashboard");
-      }
-    }, 1000);
   };
 
   const allPermissionsGranted =

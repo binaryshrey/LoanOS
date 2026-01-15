@@ -45,12 +45,14 @@ export default function DashboardClient({
 
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
-      case "Review Completed":
-      case "completed":
+      case "Completed":
         return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800";
-      case "pending":
-      case "in_progress":
+      case "Pending":
+      case "Processing":
+      case "Active":
         return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800";
+      case "Error":
+        return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800";
       default:
         return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800";
     }
@@ -103,9 +105,7 @@ export default function DashboardClient({
 
   // Computed metrics derived from fetched sessions
   const completedCount = sessions.filter(
-    (s) =>
-      (s.status ?? "") === "completed" ||
-      (s.status ?? "") === "Review Completed"
+    (s) => (s.status ?? "") === "Completed"
   ).length;
   const completedPct = sessions.length
     ? ((completedCount / sessions.length) * 100).toFixed(2)
@@ -246,7 +246,7 @@ export default function DashboardClient({
         <div className="bg-neutral-200 rounded-xl p-6 shadow-lg cursor-pointer">
           <div className="flex items-start justify-between mb-4">
             <h3 className="text-gray-800 text-sm font-medium">
-              Total Loan Documents
+              Loan Documents Processed
             </h3>
             <div className="bg-neutral-700 p-2 rounded-lg">
               <FileText className="w-5 h-5 text-white" />

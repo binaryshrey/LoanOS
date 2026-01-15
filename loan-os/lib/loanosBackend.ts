@@ -18,6 +18,7 @@ interface BackendContextResponse {
       processed: boolean;
       error?: string;
     }>;
+    analysis?: any; // Comprehensive loan analysis structure
   };
 }
 

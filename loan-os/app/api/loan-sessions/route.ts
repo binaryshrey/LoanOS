@@ -166,3 +166,61 @@ export async function GET(req: Request) {
     );
   }
 }
+
+/**
+ * PATCH /api/loan-sessions?id=xxx
+ * Update a loan session (e.g., add analysis data)
+ */
+export async function PATCH(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const sessionId = searchParams.get("id");
+
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: "Session ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const updateData = await req.json();
+
+    const supabase = getSupabaseServerClient();
+
+    console.log(
+      "Updating loan session:",
+      sessionId,
+      "with data:",
+      Object.keys(updateData)
+    );
+
+    const { data, error } = await supabase
+      .from("loan_sessions")
+      .update(updateData)
+      .eq("id", sessionId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Supabase update error:", error);
+      return NextResponse.json(
+        { error: error.message || "Failed to update loan session" },
+        { status: 500 }
+      );
+    }
+
+    console.log("✅ Loan session updated successfully:", sessionId);
+
+    return NextResponse.json({
+      success: true,
+      data: data,
+      message: "Loan session updated successfully",
+    });
+  } catch (err: any) {
+    console.error("Error in loan-sessions PATCH API:", err);
+    return NextResponse.json(
+      { error: err?.message || "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
