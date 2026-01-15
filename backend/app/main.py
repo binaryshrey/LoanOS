@@ -85,6 +85,236 @@ def health():
     return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
 
 
+@app.post("/api/process-documents")
+async def process_documents_only(request: Request):
+    """
+    Process documents with Gemini AI and return analysis WITHOUT requiring a session ID
+    This is called BEFORE creating the session in Supabase
+    """
+    try:
+        data = await request.json()
+        user_id = data.get("user_id")
+        documents = data.get("documents", [])
+        loan_context = data.get("loan_context", {})
+        
+        if not user_id or not documents:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id and documents are required"
+            )
+        
+        print(f"🚀 Processing {len(documents)} document(s) for user {user_id}...")
+        
+        # Download and process documents
+        document_contents = []
+        for doc in documents:
+            try:
+                gcs_uri = f"gs://{doc.get('gcs_bucket')}/{doc.get('gcs_object_path')}"
+                document_contents.append({
+                    "filename": doc.get("filename"),
+                    "content": gcs_uri,
+                    "type": doc.get("contentType", "application/pdf")
+                })
+            except Exception as e:
+                print(f"Error preparing document {doc.get('filename')}: {e}")
+        
+        # Process documents with Gemini
+        print(f"📄 Processing {len(document_contents)} document(s) with Gemini...")
+        document_summaries = []
+        
+        if document_contents and GCP_PROJECT_ID:
+            try:
+                model = GenerativeModel("gemini-2.0-flash-exp")
+                
+                for doc in document_contents:
+                    try:
+                        # Prepare document for Gemini
+                        document_parts = []
+                        if doc["content"].startswith("gs://"):
+                            # PDF/Excel - use URI
+                            mime_type = doc.get("type", "application/pdf")
+                            document_parts.append(Part.from_uri(doc["content"], mime_type=mime_type))
+                            print(f"📄 Processing document via URI: {doc['content']}")
+                        else:
+                            # Text content
+                            document_parts.append(doc["content"])
+                        
+                        # Ask Gemini to summarize the document
+                        prompt = f"""Analyze this loan document and provide a brief summary including:
+1. Document type (e.g., Loan Agreement, Term Sheet, etc.)
+2. Key loan details if present (amount, interest rate, term, parties)
+3. Total number of pages or sections
+
+Keep it concise (2-3 sentences)."""
+                        
+                        document_parts.insert(0, prompt)
+                        
+                        response = model.generate_content(document_parts)
+                        summary = response.text.strip()
+                        
+                        document_summaries.append({
+                            "filename": doc["filename"],
+                            "summary": summary,
+                            "processed": True
+                        })
+                        
+                        print(f"✅ Processed {doc['filename']}: {summary[:100]}...")
+                        
+                    except Exception as doc_error:
+                        print(f"⚠️ Error processing {doc['filename']}: {doc_error}")
+                        document_summaries.append({
+                            "filename": doc["filename"],
+                            "summary": "Document uploaded but summary unavailable",
+                            "processed": False,
+                            "error": str(doc_error)
+                        })
+                
+            except Exception as gemini_error:
+                print(f"⚠️ Gemini processing error: {gemini_error}")
+        
+        # Generate comprehensive analysis structure
+        analysis = {
+            # 1. GRAPHS & VISUAL ANALYTICS DATA
+            "graphs": {
+                "covenant_headroom_over_time": {
+                    "description": "Covenant performance trends",
+                    "data": [],
+                    "chart_type": "line"
+                },
+                "covenant_coverage_snapshot": {
+                    "description": "Current covenant compliance status",
+                    "data": [],
+                    "chart_type": "bar"
+                },
+                "obligation_timeline": {
+                    "description": "Upcoming obligations and deadlines",
+                    "data": [],
+                    "chart_type": "timeline"
+                },
+                "financial_trends": {
+                    "description": "Key financial metrics over time",
+                    "data": {
+                        "ebitda": [],
+                        "revenue": [],
+                        "net_debt": [],
+                        "cash_balance": []
+                    },
+                    "chart_type": "area"
+                },
+                "amendment_impact": {
+                    "description": "Before vs after amendment comparison",
+                    "data": [],
+                    "chart_type": "comparison_bar"
+                },
+                "esg_kpi_progress": {
+                    "description": "ESG performance tracking",
+                    "data": [],
+                    "chart_type": "progress_bar"
+                }
+            },
+            
+            # 2. SUMMARY METRICS (CARDS)
+            "summary_metrics": {
+                "core_loan_summary": {
+                    "facility_type": None,
+                    "total_commitment": None,
+                    "currency": None,
+                    "margin": None,
+                    "maturity_date": None,
+                    "utilisation_pct": None
+                },
+                "risk_status_summary": {
+                    "overall_loan_status": "Pending Analysis",
+                    "covenants_tested": 0,
+                    "covenants_at_risk": 0,
+                    "next_obligation_due_days": None,
+                    "amendments_detected": 0,
+                    "esg_linked": False
+                }
+            },
+            
+            # 3. STRUCTURED TABLES
+            "tables": {
+                "covenant_details": {
+                    "columns": ["covenant", "definition", "threshold", "current", "headroom", "status"],
+                    "rows": []
+                },
+                "obligation_register": {
+                    "columns": ["obligation", "due_date", "frequency", "source_clause", "status"],
+                    "rows": []
+                },
+                "document_inventory": {
+                    "columns": ["document", "type", "date", "status"],
+                    "rows": [
+                        {
+                            "document": doc["filename"],
+                            "type": "Uploaded Document",
+                            "date": datetime.utcnow().isoformat(),
+                            "status": "Active"
+                        } for doc in document_summaries if doc.get("processed", False)
+                    ]
+                },
+                "esg_obligations": {
+                    "columns": ["kpi", "target", "current", "variance", "status"],
+                    "rows": []
+                }
+            },
+            
+            # 4. DETAILED TEXTUAL ANALYSIS
+            "textual_analysis": {
+                "executive_summary": "Document processing completed. Detailed analysis will be generated based on conversation insights.",
+                "key_risk_observations": [],
+                "document_change_insights": [],
+                "operational_observations": [
+                    f"Processed {len([s for s in document_summaries if s.get('processed', False)])} of {len(document_summaries)} documents successfully."
+                ],
+                "esg_commentary": None
+            },
+            
+            # 5. CONVERSATION-LINKED INSIGHTS & AUDITABILITY
+            "conversation_insights": {
+                "conversation_summary": [],
+                "source_traceability": {
+                    "document_sources": [
+                        {
+                            "insight": summary.get("summary", ""),
+                            "source_document": summary.get("filename", ""),
+                            "clause_reference": None,
+                            "calculation_basis": None
+                        } for summary in document_summaries if summary.get("processed", False)
+                    ]
+                },
+                "confidence_statement": "Insights are based solely on the documents provided. LoanOS does not provide legal advice. Analysis will be refined through conversation."
+            },
+            
+            # Metadata
+            "metadata": {
+                "generated_at": datetime.utcnow().isoformat(),
+                "analysis_version": "1.0",
+                "documents_analyzed": len([s for s in document_summaries if s.get("processed", False)]),
+                "total_documents": len(document_summaries),
+                "loan_name": loan_context.get("loan_name", ""),
+                "region": loan_context.get("region", "")
+            }
+        }
+        
+        return {
+            "success": True,
+            "message": "Documents processed successfully",
+            "analysis": analysis,
+            "document_summaries": document_summaries,
+            "documents_processed": len([s for s in document_summaries if s.get("processed", False)])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error processing documents: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/session/context")
 async def initialize_session_context(request: SessionContextRequest):
     """
@@ -214,6 +444,132 @@ Keep it concise (2-3 sentences)."""
         # Store context in memory
         manager.set_context(request.session_id, context)
         
+        # Generate comprehensive analysis structure
+        analysis = {
+            # 1. GRAPHS & VISUAL ANALYTICS DATA
+            "graphs": {
+                "covenant_headroom_over_time": {
+                    "description": "Covenant performance trends",
+                    "data": [],  # Array of {period, actual, threshold, headroom, status}
+                    "chart_type": "line"
+                },
+                "covenant_coverage_snapshot": {
+                    "description": "Current covenant compliance status",
+                    "data": [],  # Array of {covenant_name, threshold, current_value, headroom_pct, status}
+                    "chart_type": "bar"
+                },
+                "obligation_timeline": {
+                    "description": "Upcoming obligations and deadlines",
+                    "data": [],  # Array of {type, due_date, frequency, responsible_party, status}
+                    "chart_type": "timeline"
+                },
+                "financial_trends": {
+                    "description": "Key financial metrics over time",
+                    "data": {
+                        "ebitda": [],
+                        "revenue": [],
+                        "net_debt": [],
+                        "cash_balance": []
+                    },
+                    "chart_type": "area"
+                },
+                "amendment_impact": {
+                    "description": "Before vs after amendment comparison",
+                    "data": [],  # Array of {metric, before, after, change_pct}
+                    "chart_type": "comparison_bar"
+                },
+                "esg_kpi_progress": {
+                    "description": "ESG performance tracking",
+                    "data": [],  # Array of {kpi, target, current, variance, pricing_impact}
+                    "chart_type": "progress_bar"
+                }
+            },
+            
+            # 2. SUMMARY METRICS (CARDS)
+            "summary_metrics": {
+                "core_loan_summary": {
+                    "facility_type": None,
+                    "total_commitment": None,
+                    "currency": None,
+                    "margin": None,
+                    "maturity_date": None,
+                    "utilisation_pct": None
+                },
+                "risk_status_summary": {
+                    "overall_loan_status": "Pending Analysis",  # Compliant / Watch / Breach
+                    "covenants_tested": 0,
+                    "covenants_at_risk": 0,
+                    "next_obligation_due_days": None,
+                    "amendments_detected": 0,
+                    "esg_linked": False
+                }
+            },
+            
+            # 3. STRUCTURED TABLES
+            "tables": {
+                "covenant_details": {
+                    "columns": ["covenant", "definition", "threshold", "current", "headroom", "status"],
+                    "rows": []  # Array of covenant detail objects
+                },
+                "obligation_register": {
+                    "columns": ["obligation", "due_date", "frequency", "source_clause", "status"],
+                    "rows": []  # Array of obligation objects
+                },
+                "document_inventory": {
+                    "columns": ["document", "type", "date", "status"],
+                    "rows": [
+                        {
+                            "document": doc["filename"],
+                            "type": "Uploaded Document",
+                            "date": context.get("created_at", ""),
+                            "status": "Active"
+                        } for doc in document_summaries if doc.get("processed", False)
+                    ]
+                },
+                "esg_obligations": {
+                    "columns": ["kpi", "target", "current", "variance", "status"],
+                    "rows": []  # Array of ESG KPI objects
+                }
+            },
+            
+            # 4. DETAILED TEXTUAL ANALYSIS (AI-GENERATED)
+            "textual_analysis": {
+                "executive_summary": "Document processing completed. Detailed analysis will be generated based on conversation insights.",
+                "key_risk_observations": [],
+                "document_change_insights": [],
+                "operational_observations": [
+                    f"Processed {len([s for s in document_summaries if s.get('processed', False)])} of {len(document_summaries)} documents successfully."
+                ],
+                "esg_commentary": None
+            },
+            
+            # 5. CONVERSATION-LINKED INSIGHTS & AUDITABILITY
+            "conversation_insights": {
+                "conversation_summary": [],  # Array of {user_question, loanos_conclusion}
+                "source_traceability": {
+                    "document_sources": [
+                        {
+                            "insight": summary.get("summary", ""),
+                            "source_document": summary.get("filename", ""),
+                            "clause_reference": None,
+                            "calculation_basis": None
+                        } for summary in document_summaries if summary.get("processed", False)
+                    ]
+                },
+                "confidence_statement": "Insights are based solely on the documents provided. LoanOS does not provide legal advice. Analysis will be refined through conversation."
+            },
+            
+            # Metadata
+            "metadata": {
+                "generated_at": datetime.utcnow().isoformat(),
+                "analysis_version": "1.0",
+                "documents_analyzed": len([s for s in document_summaries if s.get("processed", False)]),
+                "total_documents": len(document_summaries),
+                "loan_name": context["loan_name"],
+                "region": context["region"]
+            }
+        }
+        
         return {
             "success": True,
             "message": "Session context initialized and documents processed",
@@ -223,7 +579,8 @@ Keep it concise (2-3 sentences)."""
                 "document_count": len(document_contents),
                 "region": context["region"],
                 "documents_processed": len([s for s in document_summaries if s.get("processed", False)]),
-                "document_summaries": document_summaries
+                "document_summaries": document_summaries,
+                "analysis": analysis
             }
         }
         
