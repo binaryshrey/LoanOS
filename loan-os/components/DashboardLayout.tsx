@@ -224,7 +224,7 @@ export default function DashboardLayout({
         {/* Static sidebar for desktop */}
         <div className="hidden md:fixed md:inset-y-0 md:flex md:w-60 md:flex-col">
           {/* Sidebar component, swap this element with another sidebar if you like */}
-          <div className="flex min-h-0 flex-1 flex-col border-r border-gray-200 bg-white">
+          <div className="flex min-h-0 flex-1 flex-col border-r  bg-neutral-200">
             <div className="flex flex-1 flex-col overflow-y-auto pt-4 pb-4">
               <div className="flex shrink-0 items-center px-4">
                 <Image
@@ -317,7 +317,7 @@ export default function DashboardLayout({
           </div>
         </div>
         <div className="flex flex-1 flex-col md:pl-59">
-          <div className="sticky top-0 z-10 bg-gray-100 pl-1 pt-1 sm:pl-3 sm:pt-3 md:hidden">
+          <div className="sticky top-0 z-10 bg-neutral-200 pl-1 pt-1 sm:pl-3 sm:pt-3 md:hidden">
             <div className="flex items-center gap-2">
               <button
                 type="button"

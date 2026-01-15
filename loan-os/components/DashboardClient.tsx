@@ -67,12 +67,33 @@ export default function DashboardClient({
 
       setIsLoading(true);
       try {
-        const response = await fetch("/api/loan-sessions");
+        // Try to fetch from FastAPI backend first, fall back to Next.js API
+        let response;
+        try {
+          // Fetch from FastAPI backend
+          const backendUrl =
+            process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+          response = await fetch(
+            `${backendUrl}/api/loan-sessions?user_id=${encodeURIComponent(
+              userId
+            )}`
+          );
+        } catch (backendError) {
+          console.warn(
+            "FastAPI backend unavailable, falling back to Next.js API:",
+            backendError
+          );
+          // Fall back to Next.js API route
+          response = await fetch(
+            `/api/loan-sessions?user_id=${encodeURIComponent(userId)}`
+          );
+        }
+
         if (!response.ok) {
           throw new Error("Failed to fetch loan sessions");
         }
         const data = await response.json();
-        setSessions(data.sessions || []);
+        setSessions(data.data || data.sessions || []);
         setError(null);
       } catch (err) {
         console.error("Error fetching loan sessions:", err);
@@ -92,10 +113,10 @@ export default function DashboardClient({
         console.warn("[Dashboard] clicked session has no id");
         return;
       }
-      // Navigate to loan session chat
-      router.push(`/loan-chat/${encodeURIComponent(String(id))}`);
+      // Navigate to loan session summary page
+      router.push(`/summary/${encodeURIComponent(String(id))}`);
     } catch (err) {
-      console.error("[Dashboard] Failed to navigate to loan chat:", err);
+      console.error("[Dashboard] Failed to navigate to summary:", err);
     }
   };
 
@@ -152,8 +173,15 @@ export default function DashboardClient({
   const filteredSessions = searchQuery
     ? sessions.filter((s) => {
         const normalizedQuery = searchQuery.toLowerCase();
-        const name = (s.loan_type || s.startup_name || "").toLowerCase();
+        const name = (
+          s.loan_name ||
+          s.loan_type ||
+          s.startup_name ||
+          ""
+        ).toLowerCase();
         const content = (s.content || "").toLowerCase();
+        const userRole = (s.user_role || "").toLowerCase();
+        const institution = (s.institution || "").toLowerCase();
         const feedback = (
           typeof s.feedback === "string"
             ? s.feedback
@@ -162,6 +190,8 @@ export default function DashboardClient({
         return (
           name.includes(normalizedQuery) ||
           content.includes(normalizedQuery) ||
+          userRole.includes(normalizedQuery) ||
+          institution.includes(normalizedQuery) ||
           feedback.includes(normalizedQuery)
         );
       })
@@ -310,16 +340,13 @@ export default function DashboardClient({
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Score
-                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-6 py-8 text-center text-sm text-gray-500"
                   >
                     <div className="flex items-center justify-center gap-2 flex-col">
@@ -331,7 +358,7 @@ export default function DashboardClient({
               ) : error ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-6 py-8 text-center text-sm text-red-600"
                   >
                     {error}
@@ -340,7 +367,7 @@ export default function DashboardClient({
               ) : filteredSessions.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-6 py-8 text-center text-sm text-gray-500"
                   >
                     {searchQuery
@@ -359,7 +386,11 @@ export default function DashboardClient({
                       {idx + 1}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {s.loan_type || s.startup_name || s.content || "-"}
+                      {s.loan_name ||
+                        s.loan_type ||
+                        s.startup_name ||
+                        s.content ||
+                        "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {formatDuration(s.duration_seconds ?? s.duration ?? 0)}
@@ -385,28 +416,6 @@ export default function DashboardClient({
                       <span className={getStatusBadgeClass(s.status ?? "")}>
                         {s.status ?? "-"}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                      {(() => {
-                        try {
-                          if (
-                            s?.score &&
-                            typeof s.score === "object" &&
-                            s.score.overall_score != null
-                          ) {
-                            const n = Number(s.score.overall_score);
-                            if (!isNaN(n)) return `${(n / 10).toFixed(1)}/10`;
-                          }
-                          if (typeof s.score === "number") {
-                            const num = s.score;
-                            if (num > 10) return `${(num / 10).toFixed(1)}/10`;
-                            return `${num.toFixed(1)}/10`;
-                          }
-                        } catch (e) {
-                          // fallthrough
-                        }
-                        return "-";
-                      })()}
                     </td>
                   </tr>
                 ))

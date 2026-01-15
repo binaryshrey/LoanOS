@@ -946,3 +946,77 @@ async def end_session(session_id: str):
         "message": "Session ended successfully"
     }
 
+
+@app.get("/api/loan-sessions")
+async def get_all_loan_sessions(user_id: Optional[str] = None):
+    """
+    Get all loan sessions from the database
+    Optionally filter by user_id if provided as query parameter
+    """
+    try:
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Supabase not configured")
+        
+        # Build query
+        query = supabase.table("loan_sessions").select("*")
+        
+        # Filter by user_id if provided
+        if user_id:
+            query = query.eq("user_id", user_id)
+        
+        # Order by created_at descending (most recent first)
+        query = query.order("created_at", desc=True)
+        
+        # Execute query
+        response = query.execute()
+        
+        if response.data is None:
+            return {
+                "success": True,
+                "data": [],
+                "count": 0
+            }
+        
+        return {
+            "success": True,
+            "data": response.data,
+            "count": len(response.data)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching loan sessions: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/loan-sessions/{session_id}")
+async def get_loan_session_by_id(session_id: str):
+    """
+    Get a specific loan session by ID
+    """
+    try:
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Supabase not configured")
+        
+        # Fetch session by ID
+        response = supabase.table("loan_sessions").select("*").eq("id", session_id).single().execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Loan session not found")
+        
+        return {
+            "success": True,
+            "data": response.data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching loan session {session_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
